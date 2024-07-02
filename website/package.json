@@ -37,7 +37,7 @@
     "unist-util-visit": "^5.0.0"
   },
   "devDependencies": {
-    "@babel/core": "7.21.4",
+    "@babel/core": "7.24.7",
     "@napi-rs/simple-git": "^0.1.8",
     "@types/node": "^18.11.18",
     "@types/react": "^18.0.27",
