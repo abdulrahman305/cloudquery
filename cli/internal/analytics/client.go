@@ -20,9 +20,10 @@ var (
 )
 
 type eventDetails struct {
-	user        cqapi.User
-	currentTeam string
-	environment string
+	user                  cqapi.User
+	currentTeam           string
+	isCurrentTeamInternal bool
+	environment           string
 }
 
 type noOpLogger struct{}
@@ -72,10 +73,13 @@ func refreshSyncEventDetails(ctx context.Context) *eventDetails {
 	}
 	currentTeam, _ := internalAuth.GetTeamForToken(ctx, token)
 
+	currentTeamInternal, _ := internalAuth.IsTeamInternal(ctx, currentTeam)
+
 	eventDetails := &eventDetails{
-		user:        *user,
-		currentTeam: currentTeam,
-		environment: getEnvironment(),
+		user:                  *user,
+		currentTeam:           currentTeam,
+		isCurrentTeamInternal: currentTeamInternal,
+		environment:           getEnvironment(),
 	}
 
 	// Cache event details for future use
@@ -94,6 +98,10 @@ func TrackLoginSuccess(ctx context.Context, invocationUUID uuid.UUID) {
 		return
 	}
 
+	if details.isCurrentTeamInternal {
+		return
+	}
+
 	_ = client.Enqueue(rudderstack.Track{
 		UserId: details.user.ID.String(),
 		Event:  "login_success",
@@ -101,6 +109,9 @@ func TrackLoginSuccess(ctx context.Context, invocationUUID uuid.UUID) {
 			"invocation_uuid": invocationUUID,
 			"team":            details.currentTeam,
 			"environment":     details.environment,
+			"$groups": rudderstack.Properties{
+				"team": details.currentTeam,
+			},
 		},
 	})
 }
@@ -123,6 +134,8 @@ func getSyncCommonProps(invocationUUID uuid.UUID, event SyncStartedEvent, detail
 		Set("invocation_uuid", invocationUUID).
 		Set("sync_run_id", invocationUUID).
 		Set("team", details.currentTeam).
+		Set("$groups", rudderstack.NewProperties().
+			Set("team", details.currentTeam)).
 		Set("environment", details.environment).
 		Set("sync_name", event.Source.Name).
 		Set("source_path", event.Source.Path).
@@ -140,6 +153,10 @@ func TrackSyncStarted(ctx context.Context, invocationUUID uuid.UUID, event SyncS
 
 	details := getSyncEventDetails(ctx)
 	if details == nil {
+		return
+	}
+
+	if details.isCurrentTeamInternal {
 		return
 	}
 
@@ -169,6 +186,10 @@ func TrackSyncCompleted(ctx context.Context, invocationUUID uuid.UUID, event Syn
 		return
 	}
 
+	if details.isCurrentTeamInternal {
+		return
+	}
+
 	status := "success"
 	if event.AbortedDueToError != nil {
 		status = "error"
@@ -186,6 +207,96 @@ func TrackSyncCompleted(ctx context.Context, invocationUUID uuid.UUID, event Syn
 		UserId:     details.user.ID.String(),
 		Event:      "sync_run_completed",
 		Properties: props,
+	})
+}
+
+type InitEvent struct {
+	Source         string
+	Destination    string
+	AcceptDefaults bool
+	SpecPath       string
+	Error          error
+}
+
+func getInitCommonProps(invocationUUID uuid.UUID, event InitEvent, details *eventDetails) rudderstack.Properties {
+	props := rudderstack.NewProperties().
+		Set("invocation_uuid", invocationUUID).
+		Set("source", event.Source).
+		Set("destination", event.Destination).
+		Set("accept_defaults", event.AcceptDefaults).
+		Set("spec_path", event.SpecPath).
+		Set("error", event.Error)
+
+	if details != nil {
+		props.Set("team", details.currentTeam).
+			Set("$groups", rudderstack.NewProperties().
+				Set("team", details.currentTeam)).
+			Set("environment", details.environment).
+			Set("user_id", details.user.ID).
+			Set("user_email", details.user.Email)
+	}
+
+	return props
+}
+
+func TrackInitStarted(ctx context.Context, invocationUUID uuid.UUID, event InitEvent) {
+	if client == nil {
+		return
+	}
+
+	details := getSyncEventDetails(ctx)
+	if details != nil && details.isCurrentTeamInternal {
+		return
+	}
+
+	props := getInitCommonProps(invocationUUID, event, details)
+	if details != nil {
+		_ = client.Enqueue(rudderstack.Track{
+			UserId:     details.user.ID.String(),
+			Event:      "init_started",
+			Properties: props,
+		})
+		return
+	}
+
+	_ = client.Enqueue(rudderstack.Track{
+		AnonymousId: invocationUUID.String(),
+		Event:       "init_started",
+		Properties:  props,
+	})
+}
+
+func TrackInitCompleted(ctx context.Context, invocationUUID uuid.UUID, event InitEvent) {
+	if client == nil {
+		return
+	}
+
+	details := getSyncEventDetails(ctx)
+	if details != nil && details.isCurrentTeamInternal {
+		return
+	}
+
+	status := "success"
+	if event.Error != nil {
+		status = "error"
+	}
+
+	props := getInitCommonProps(invocationUUID, event, details).
+		Set("status", status)
+
+	if details != nil {
+		_ = client.Enqueue(rudderstack.Track{
+			UserId:     details.user.ID.String(),
+			Event:      "init_completed",
+			Properties: props,
+		})
+		return
+	}
+
+	_ = client.Enqueue(rudderstack.Track{
+		AnonymousId: invocationUUID.String(),
+		Event:       "init_completed",
+		Properties:  props,
 	})
 }
 

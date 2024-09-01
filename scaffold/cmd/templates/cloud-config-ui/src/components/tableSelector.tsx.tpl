@@ -1,28 +1,43 @@
 import React, { useCallback, useMemo } from 'react';
 
-import {
-  generatePluginTableList,
-  generateTablesFromJson,
-  TableSelector,
-} from '@cloudquery/plugin-config-ui-lib';
+import { TableSelector, generatePluginTableList } from '@cloudquery/plugin-config-ui-lib';
 import FormHelperText from '@mui/material/FormHelperText';
+import Stack from '@mui/system/Stack';
 import { useFormContext, useWatch } from 'react-hook-form';
 
-import tables from '../data/__tables.json';
+interface PluginTable {
+  /** Description of the table */
+  description: string;
+  /** Whether the table is incremental */
+  is_incremental: boolean;
+  /** Whether the table is paid */
+  is_paid?: boolean;
+  name: string;
+  /** Name of the parent table, if any */
+  parent?: string;
+  /** Names of the tables that depend on this table */
+  relations: string[];
+  /** Title of the table */
+  title: string;
+}
 
-import { FormValues } from '../utils/formSchema';
+interface Props {
+  pluginTables: PluginTable[];
+}
 
-function _PluginTableSelector() {
+function _PluginTableSelector({ pluginTables }: Props) {
   const {
     control,
     formState: { errors, submitCount },
     setValue,
     trigger,
-  } = useFormContext<FormValues>();
+  } = useFormContext();
   const selectedTables: Record<string, boolean> = useWatch({
     exact: true,
     name: 'tables',
   });
+
+  const tableList = useMemo(() => generatePluginTableList(pluginTables), [pluginTables]);
 
   const handleChange = useCallback(
     (value: Record<string, boolean>) => {
@@ -46,27 +61,21 @@ function _PluginTableSelector() {
     [control],
   );
 
-  const tableList = useMemo(
-    () => generatePluginTableList(generateTablesFromJson(tables as any)),
-    [],
-  );
-
   if (tableList.length === 0) {
     return null;
   }
 
   return (
-    <>
+    <Stack gap={1}>
       <TableSelector
-        disabled={tableList.length < 2}
         errorMessage={errorMessage}
         onChange={handleChange}
         subscribeToTablesValueChange={subscribeToTablesValueChange}
         tableList={tableList}
         value={selectedTables}
       />
-      <FormHelperText error={true}>{errors.tables?.message}</FormHelperText>
-    </>
+      <FormHelperText error={!!errorMessage}>{errorMessage}</FormHelperText>
+    </Stack>
   );
 }
 
