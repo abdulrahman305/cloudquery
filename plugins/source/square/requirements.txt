@@ -4,3 +4,4 @@ pyarrow>=15.0.2
 squareup==29.0.0.20230720
 pytest<=8.2.2
 setuptools>=78.1.1 # not directly required, pinned by Snyk to avoid a vulnerability
+protobuf>=4.25.8 # not directly required, pinned by Snyk to avoid a vulnerability
